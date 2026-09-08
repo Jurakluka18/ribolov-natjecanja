@@ -288,7 +288,7 @@ function HomeScreen({
 
   return (
     <>
-      <HeaderBar theme={theme} toggle={toggle} subtitle="Bodovanje feeder / sportskog ribolova" />
+      <HeaderBar theme={theme} toggle={toggle} subtitle="Bodovanje ribolovnih natjecanja" />
       <main className="app">
         {view === "choose" && (
           <div className="home-wrap">
