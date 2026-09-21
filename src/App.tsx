@@ -1900,10 +1900,6 @@ function TeamsPage({ comp, showToast }: { comp: CompetitionState; showToast: (m:
         </div>
       )}
 
-      <div className="results-credit" aria-label="Autor aplikacije">
-        Created by Luka Jurak
-      </div>
-
       {/* Skriveni printable view — Čista bijela verzija za PDF / PNG izvoz */}
       <div className="print-offscreen" aria-hidden>
         <PrintableView

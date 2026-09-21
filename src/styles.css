@@ -1028,15 +1028,3 @@ th.center {
   .code-pill { font-size: 0.74rem; padding: 4px 8px; }
   .header-sub { display: none; }
 }
-
-
-/* Diskretan potpis autora ispod rezultata */
-.results-credit {
-  margin: 4px 0 18px;
-  text-align: center;
-  color: var(--text-muted);
-  font-size: 0.76rem;
-  font-weight: 500;
-  opacity: 0.78;
-  letter-spacing: 0.01em;
-}
