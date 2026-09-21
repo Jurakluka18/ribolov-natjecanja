@@ -165,8 +165,14 @@ Aktivno online natjecanje sprema se u localStorage. Postoji offline queue za izm
 Važan dizajn:
 - promjene se mogu privremeno queueati;
 - po istoj poziciji zadnja izmjena pobjeđuje;
-- pri povratku mreže pokušava se sinkronizirati;
+- cijelo zadnje stanje online natjecanja sprema se lokalno, pa se natjecanje može ponovno otvoriti i bez signala;
+- svaki unos prvo se trajno sprema u lokalni queue, a tek nakon potvrde baze uklanja iz njega;
+- potvrda starijeg upisa ne smije ukloniti noviju izmjenu iste pozicije;
+- slanje se automatski ponavlja svakih 5 sekundi, pri povratku mreže, fokusu prozora i povratku aplikacije u prvi plan;
+- svakih 15 sekundi dohvaća se svježi snapshot iz baze, ali lokalni nepotvrđeni unosi imaju prednost dok ne budu poslani;
 - Supabase Realtime prenosi promjene drugim klijentima.
+
+U zaglavlju je namjerno ostao samo diskretan indikator: zelena/žuta/crvena točka i mali broj nepotvrđenih rezultata. Vagar ne treba ručno osvježavati niti pokretati sinkronizaciju.
 
 Ovo je važno jer aplikacija radi na terenu gdje mobilna veza može biti loša. **Ne uklanjati offline/retry ponašanje radi pojednostavljenja bez izričitog razloga.**
 

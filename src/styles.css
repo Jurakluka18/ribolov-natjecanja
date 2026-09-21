@@ -993,6 +993,24 @@ th.center {
   position: relative;
   cursor: help;
 }
+.sync-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.sync-pending-count {
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
 .sync-dot-green { background: var(--success); box-shadow: 0 0 0 3px rgba(47, 138, 78, 0.18); }
 .sync-dot-yellow {
   background: var(--gold);

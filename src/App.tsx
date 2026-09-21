@@ -629,7 +629,14 @@ function SyncBadge({
           <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
         </svg>
       </button>
-      <span className={`sync-dot ${dotCls}`} title={tip} data-testid="sync-dot" data-status={status} />
+      <span className="sync-state" title={tip} aria-label={tip}>
+        <span className={`sync-dot ${dotCls}`} data-testid="sync-dot" data-status={status} />
+        {pendingCount > 0 && (
+          <span className="sync-pending-count" data-testid="sync-pending-count">
+            {pendingCount}
+          </span>
+        )}
+      </span>
     </div>
   );
 }

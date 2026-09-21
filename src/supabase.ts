@@ -187,8 +187,8 @@ export async function updatePosition({
   weightGrams: number | null;
   status: PositionStatus;
   updatedBy?: string | null;
-}): Promise<void> {
-  const { error } = await supabase.from("positions").upsert(
+}): Promise<PositionRow> {
+  const { data, error } = await supabase.from("positions").upsert(
     {
       competition_id: competitionId,
       sector,
@@ -199,8 +199,21 @@ export async function updatePosition({
       updated_by: updatedBy ?? null,
     },
     { onConflict: "competition_id,sector,team_number" }
-  );
+  ).select().single();
   if (error) throw new Error(error.message);
+  if (!data) throw new Error("Baza nije potvrdila spremanje rezultata.");
+
+  const saved = data as PositionRow;
+  if (
+    saved.weight_grams !== weightGrams ||
+    saved.status !== status ||
+    saved.competition_id !== competitionId ||
+    saved.sector !== sector ||
+    saved.team_number !== teamNumber
+  ) {
+    throw new Error("Baza je vratila drugačiji rezultat od poslanog.");
+  }
+  return saved;
 }
 
 // ---------- updateCompetitionMeta ----------
