@@ -293,6 +293,7 @@ Potvrđena pravila za posebne statuse:
 - `absent` (bez člana) dobiva fiksno `broj ekipa + 1` bod i ne ulazi u rangiranje sektora;
 - `red` (crveni karton) također dobiva fiksno `broj ekipa + 1` bod i ne ulazi u rangiranje sektora niti dijeli mjesto s regularnim rezultatom od 0 g;
 - `yellow` se rangira s 90% unesene težine i nakon izračunatog mjesta dobiva još 1 bod.
+- Kartica `Statistika` prikazuje statistiku samo trenutnog natjecanja: ukupnu i prosječnu službenu kilažu, najveći pojedinačni ulov, kilažu pobjedničke ekipe, sektorske sažetke i graf ukupne kilaže po sektorima. Žuti karton ulazi s umanjenom kilažom, regularnih 0 g ulazi u prosjek, a crveni karton i `bez člana` isključeni su iz kilaže i prosjeka.
 
 ## 16. Deploy i provjera
 

@@ -48,6 +48,33 @@ export interface TeamResultRow {
   placement: number | null; // konačno mjesto u ekipnom poretku
 }
 
+export interface StatisticsCatch {
+  sector: Sector;
+  teamNumber: number;
+  teamName: string;
+  weight: number;
+}
+
+export interface SectorStatistics {
+  sector: Sector;
+  totalWeight: number;
+  averageWeight: number | null;
+  weighedCount: number;
+  biggestCatch: StatisticsCatch | null;
+}
+
+export interface CompetitionStatistics {
+  totalWeight: number;
+  averageWeight: number | null;
+  weighedCount: number;
+  biggestCatch: StatisticsCatch | null;
+  winner: { teamName: string; totalWeight: number } | null;
+  sectors: Record<Sector, SectorStatistics>;
+  entered: number;
+  totalPositions: number;
+  complete: boolean;
+}
+
 // ----------- pomoćne funkcije za status -----------
 
 export function emptyPosition(): PositionState {
@@ -232,6 +259,81 @@ export function computeTeamResults(
   });
 
   return teams;
+}
+
+/**
+ * Statistika jednog natjecanja računa se iz službene kilaže:
+ * - normal: unesena kilaža
+ * - yellow: unesena kilaža umanjena za 10%
+ * - red/absent: potpuno se izuzimaju iz kilaže i prosjeka
+ * Regularan rezultat 0 g ulazi u broj izvaganih natjecatelja.
+ */
+export function computeCompetitionStatistics(
+  state: WeightsState,
+  numTeams: number,
+  teamNames: string[] = []
+): CompetitionStatistics {
+  const results = computeSectorResults(state, numTeams);
+  const sectors = {} as Record<Sector, SectorStatistics>;
+  const allCatches: StatisticsCatch[] = [];
+
+  (["A", "B", "C"] as Sector[]).forEach((sector) => {
+    const catches = results[sector]
+      .filter(
+        (row) =>
+          row.entered &&
+          row.status !== "red" &&
+          row.status !== "absent"
+      )
+      .map((row) => ({
+        sector,
+        teamNumber: row.teamNumber,
+        teamName: (teamNames[row.teamNumber - 1] ?? "").trim() || `Ekipa ${row.teamNumber}`,
+        weight: row.effectiveWeight,
+      }));
+
+    const totalWeight = catches.reduce((sum, item) => sum + item.weight, 0);
+    const biggestCatch = catches.reduce<StatisticsCatch | null>(
+      (best, item) => (!best || item.weight > best.weight ? item : best),
+      null
+    );
+
+    sectors[sector] = {
+      sector,
+      totalWeight,
+      averageWeight: catches.length > 0 ? totalWeight / catches.length : null,
+      weighedCount: catches.length,
+      biggestCatch,
+    };
+    allCatches.push(...catches);
+  });
+
+  const totalWeight = allCatches.reduce((sum, item) => sum + item.weight, 0);
+  const biggestCatch = allCatches.reduce<StatisticsCatch | null>(
+    (best, item) => (!best || item.weight > best.weight ? item : best),
+    null
+  );
+  const progress = countEntered(state);
+  const complete = progress.entered === progress.total;
+  const winnerTeam = complete
+    ? computeTeamResults(state, numTeams, teamNames)
+        .filter((team) => team.placement === 1)
+        .sort((a, b) => a.teamNumber - b.teamNumber)[0] ?? null
+    : null;
+
+  return {
+    totalWeight,
+    averageWeight: allCatches.length > 0 ? totalWeight / allCatches.length : null,
+    weighedCount: allCatches.length,
+    biggestCatch,
+    winner: winnerTeam
+      ? { teamName: winnerTeam.teamName, totalWeight: winnerTeam.totalWeight }
+      : null,
+    sectors,
+    entered: progress.entered,
+    totalPositions: progress.total,
+    complete,
+  };
 }
 
 // Formatira bod (može biti decimalan kod izjednačenja)
