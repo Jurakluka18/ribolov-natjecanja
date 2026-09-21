@@ -768,6 +768,17 @@ th.center {
   pointer-events: none;
   z-index: -1;
 }
+.printable-view,
+.printable-view tbody tr,
+.printable-view tbody tr:nth-child(even) {
+  background: #fff !important;
+  color: #111 !important;
+}
+.printable-view th,
+.printable-view td {
+  white-space: normal !important;
+  box-sizing: border-box;
+}
 
 @media print {
   .header,
