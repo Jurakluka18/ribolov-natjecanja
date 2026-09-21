@@ -289,6 +289,11 @@ Kod svake promjene koja utječe na plasman:
 
 Vizualni feature ne smije nenamjerno promijeniti rezultat.
 
+Potvrđena pravila za posebne statuse:
+- `absent` (bez člana) dobiva fiksno `broj ekipa + 1` bod i ne ulazi u rangiranje sektora;
+- `red` (crveni karton) također dobiva fiksno `broj ekipa + 1` bod i ne ulazi u rangiranje sektora niti dijeli mjesto s regularnim rezultatom od 0 g;
+- `yellow` se rangira s 90% unesene težine i nakon izračunatog mjesta dobiva još 1 bod.
+
 ## 16. Deploy i provjera
 
 GitHub `main` je spojen na Vercel production. Commit može automatski pokrenuti deploy.

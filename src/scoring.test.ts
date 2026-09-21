@@ -94,17 +94,18 @@ describe("Žuti karton", () => {
 });
 
 describe("Crveni karton", () => {
-  it("tretira se kao zadnje mjesto (0 g) i dobije +1", () => {
+  it("dobije fiksno n+1 i ne dijeli mjesto s regularnim nulama", () => {
     // 10 ekipa: jedan crveni + 2 normalne nule + 7 s ulovom
     const positions: PositionState[] = [
       w(9000), w(8000), w(7000), w(6000), w(5000), w(4000), w(3000), // 7 mjesta 1..7
-      w(0), w(0), red(), // tri nule dijele mjesta 8,9,10 = 9
+      w(0), w(0), red(),
     ];
     const rows = rankSector(positions, 10);
-    expect(row(rows, 8).points).toBe(9); // normalna nula
-    expect(row(rows, 9).points).toBe(9);
-    expect(row(rows, 10).rank).toBe(9); // crveni rank prije bonusa
-    expect(row(rows, 10).points).toBe(10); // 9 + 1
+    // Crveni je izvan rangiranja, pa dvije regularne nule dijele mjesta 8 i 9.
+    expect(row(rows, 8).points).toBe(8.5);
+    expect(row(rows, 9).points).toBe(8.5);
+    expect(row(rows, 10).rank).toBeNull();
+    expect(row(rows, 10).points).toBe(11); // n+1
   });
 
   it("crveni za ekipni tiebreak ima kilažu 0", () => {
@@ -156,7 +157,7 @@ describe("computeTeamResults — kombinacije", () => {
     // 3 ekipe. Ekipa 1: A normal, B žuti, C crveni
     // Sektor A: [5000, 3000, 1000] -> ekipa1 = 1
     // Sektor B: žuti 5000(eff 4500) vs 6000, 4000 -> eff sort: 6000(1),4500(2),4000(3); ekipa1 žuti 2. +1 = 3
-    // Sektor C: crveni vs [4000, 2000] -> red eff 0 zadnji = mjesto 3 +1 = 4
+    // Sektor C: crveni je izvan rangiranja i dobiva n+1 = 4
     const a = [w(5000), w(3000), w(1000)];
     const b = [yellow(5000), w(6000), w(4000)];
     const c = [red(), w(4000), w(2000)];
