@@ -12,6 +12,7 @@ import {
   type SectorResultRow,
   computeSectorResults,
   computeTeamResults,
+  computeCompetitionStatistics,
   emptyPosition,
   fmtPoints,
   fmtWeight,
@@ -45,7 +46,7 @@ interface CompetitionState {
   weights: WeightsState;
 }
 
-type Page = "setup" | "weigh" | "sectors" | "teams";
+type Page = "setup" | "weigh" | "sectors" | "teams" | "statistics";
 
 function emptyWeights(n: number): WeightsState {
   const make = () => Array.from({ length: n }, () => emptyPosition());
@@ -705,6 +706,9 @@ function OnlineApp({ active, onLeave }: { active: ActiveOnline; onLeave: () => v
           <button className={`tab ${page === "teams" ? "active" : ""}`} onClick={() => setPage("teams")} disabled={!started}>
             Ekipni poredak
           </button>
+          <button className={`tab ${page === "statistics" ? "active" : ""}`} onClick={() => setPage("statistics")} disabled={!started}>
+            Statistika
+          </button>
           <button className={`tab ${page === "setup" ? "active" : ""}`} onClick={() => setPage("setup")} disabled={!started}>
             Postavke
           </button>
@@ -731,6 +735,7 @@ function OnlineApp({ active, onLeave }: { active: ActiveOnline; onLeave: () => v
             )}
             {page === "sectors" && <SectorsPage comp={comp} />}
             {page === "teams" && <TeamsPage comp={comp} showToast={showToast} />}
+            {page === "statistics" && <StatisticsPage comp={comp} />}
             {page === "setup" && (
               <OnlineSetupPage
                 comp={comp}
@@ -888,6 +893,9 @@ function OfflineApp({
           <button className={`tab ${page === "teams" ? "active" : ""}`} onClick={() => setPage("teams")} disabled={!started}>
             Ekipni poredak
           </button>
+          <button className={`tab ${page === "statistics" ? "active" : ""}`} onClick={() => setPage("statistics")} disabled={!started}>
+            Statistika
+          </button>
         </nav>
 
         {page === "setup" && (
@@ -937,10 +945,135 @@ function OfflineApp({
 
         {page === "sectors" && comp && <SectorsPage comp={comp} />}
         {page === "teams" && comp && <TeamsPage comp={comp} showToast={showToast} />}
+        {page === "statistics" && comp && <StatisticsPage comp={comp} />}
       </main>
 
       {toast && <div className="toast">{toast}</div>}
     </>
+  );
+}
+
+// ===================== STATISTICS =====================
+function StatisticsPage({ comp }: { comp: CompetitionState }) {
+  const statistics = useMemo(
+    () => computeCompetitionStatistics(comp.weights, comp.numTeams, comp.teamNames),
+    [comp.weights, comp.numTeams, comp.teamNames]
+  );
+
+  if (statistics.entered === 0) {
+    return (
+      <div className="card">
+        <div className="empty">
+          <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+            <path d="M4 19V9M10 19V5M16 19v-7M22 19V2" />
+          </svg>
+          <p>Još nema unesenih rezultata. Statistika će se prikazati nakon prvog vaganja.</p>
+        </div>
+      </div>
+    );
+  }
+
+  const maxSectorWeight = Math.max(
+    ...SECTORS.map((sector) => statistics.sectors[sector].totalWeight),
+    1
+  );
+
+  return (
+    <div className="statistics-page">
+      {!statistics.complete && (
+        <div className="stats-progress" role="status">
+          Statistika je privremena · uneseno {statistics.entered} od {statistics.totalPositions} rezultata
+        </div>
+      )}
+
+      <div className="stats-summary-grid">
+        <article className="stat-card">
+          <span className="stat-label">Ukupna kilaža</span>
+          <strong className="stat-value">{fmtWeight(statistics.totalWeight)} g</strong>
+        </article>
+        <article className="stat-card">
+          <span className="stat-label">Prosjek po natjecatelju</span>
+          <strong className="stat-value">
+            {statistics.averageWeight === null ? "—" : `${fmtWeight(statistics.averageWeight)} g`}
+          </strong>
+          <span className="stat-detail">{statistics.weighedCount} izvaganih</span>
+        </article>
+        <article className="stat-card">
+          <span className="stat-label">Najveći pojedinačni ulov</span>
+          <strong className="stat-value">
+            {statistics.biggestCatch ? `${fmtWeight(statistics.biggestCatch.weight)} g` : "—"}
+          </strong>
+          {statistics.biggestCatch && (
+            <span className="stat-detail">
+              {statistics.biggestCatch.teamName} · sektor {statistics.biggestCatch.sector}
+            </span>
+          )}
+        </article>
+        <article className="stat-card">
+          <span className="stat-label">Kilaža pobjedničke ekipe</span>
+          <strong className="stat-value">
+            {statistics.winner ? `${fmtWeight(statistics.winner.totalWeight)} g` : "—"}
+          </strong>
+          <span className="stat-detail">
+            {statistics.winner ? statistics.winner.teamName : "Prikazuje se nakon svih unosa"}
+          </span>
+        </article>
+      </div>
+
+      <div className="card">
+        <h2>Ukupna kilaža po sektorima</h2>
+        <div className="sector-chart" role="img" aria-label="Graf ukupne kilaže po sektorima">
+          {SECTORS.map((sector) => {
+            const item = statistics.sectors[sector];
+            const width = item.totalWeight === 0 ? 0 : Math.max(4, (item.totalWeight / maxSectorWeight) * 100);
+            return (
+              <div className="sector-chart-row" key={sector}>
+                <span className="sector-chart-label">{sector}</span>
+                <div className="sector-chart-track">
+                  <span
+                    className="sector-chart-bar"
+                    style={{ width: `${width}%`, background: SECTOR_COLORS[sector] }}
+                  />
+                </div>
+                <strong>{fmtWeight(item.totalWeight)} g</strong>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="stats-sector-grid">
+        {SECTORS.map((sector) => {
+          const item = statistics.sectors[sector];
+          return (
+            <article className="card stats-sector-card" key={sector}>
+              <div className="section-title stats-sector-title">
+                <span className="dot" style={{ background: SECTOR_COLORS[sector] }} />
+                Sektor {sector}
+              </div>
+              <dl className="stats-list">
+                <div>
+                  <dt>Ukupna kilaža</dt>
+                  <dd>{fmtWeight(item.totalWeight)} g</dd>
+                </div>
+                <div>
+                  <dt>Prosječna kilaža</dt>
+                  <dd>{item.averageWeight === null ? "—" : `${fmtWeight(item.averageWeight)} g`}</dd>
+                </div>
+                <div>
+                  <dt>Najveći ulov</dt>
+                  <dd>{item.biggestCatch ? `${fmtWeight(item.biggestCatch.weight)} g` : "—"}</dd>
+                </div>
+                <div>
+                  <dt>Ekipa s najvećim ulovom</dt>
+                  <dd>{item.biggestCatch?.teamName ?? "—"}</dd>
+                </div>
+              </dl>
+            </article>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 

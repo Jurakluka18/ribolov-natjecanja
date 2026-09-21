@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   rankSector,
   computeTeamResults,
+  computeCompetitionStatistics,
   type PositionState,
   type WeightsState,
 } from "./scoring";
@@ -11,6 +12,14 @@ const w = (weight: number | null): PositionState => ({ weight, status: "normal" 
 const yellow = (weight: number): PositionState => ({ weight, status: "yellow" });
 const red = (): PositionState => ({ weight: null, status: "red" });
 const absent = (): PositionState => ({ weight: null, status: "absent" });
+
+function buildState(
+  a: PositionState[],
+  b: PositionState[],
+  c: PositionState[]
+): WeightsState {
+  return { A: a, B: b, C: c };
+}
 
 function row(rows: ReturnType<typeof rankSector>, teamNumber: number) {
   return rows.find((r) => r.teamNumber === teamNumber)!;
@@ -145,14 +154,6 @@ describe("Bez člana (absent)", () => {
 });
 
 describe("computeTeamResults — kombinacije", () => {
-  function buildState(
-    a: PositionState[],
-    b: PositionState[],
-    c: PositionState[]
-  ): WeightsState {
-    return { A: a, B: b, C: c };
-  }
-
   it("ekipa s normalnim, žutim i crvenim članom", () => {
     // 3 ekipe. Ekipa 1: A normal, B žuti, C crveni
     // Sektor A: [5000, 3000, 1000] -> ekipa1 = 1
@@ -205,5 +206,47 @@ describe("computeTeamResults — kombinacije", () => {
     expect(t1.pointsC).toBe(2.5);
     // tiebreak kilaža za ekipu 1: 5000+3000+3600(umanjeno) = 11600
     expect(t1.totalWeight).toBe(11600);
+  });
+});
+
+describe("computeCompetitionStatistics", () => {
+  it("računa službene kilaže i isključuje red/bez člana iz prosjeka", () => {
+    const state = buildState(
+      [w(5000), yellow(4000), red()],
+      [w(0), w(2000), absent()],
+      [w(3000), w(1000), w(500)]
+    );
+
+    const stats = computeCompetitionStatistics(state, 3, ["Štuka", "Dunav", "Drava"]);
+
+    // 5000 + 3600 + 0 + 2000 + 3000 + 1000 + 500
+    expect(stats.totalWeight).toBe(15100);
+    expect(stats.weighedCount).toBe(7);
+    expect(stats.averageWeight).toBeCloseTo(15100 / 7);
+    expect(stats.biggestCatch).toMatchObject({
+      sector: "A",
+      teamName: "Štuka",
+      weight: 5000,
+    });
+    expect(stats.sectors.A.totalWeight).toBe(8600);
+    expect(stats.sectors.A.averageWeight).toBe(4300);
+    expect(stats.sectors.B.weighedCount).toBe(2);
+    expect(stats.complete).toBe(true);
+    expect(stats.winner).not.toBeNull();
+  });
+
+  it("ne proglašava pobjednika dok svi rezultati nisu uneseni", () => {
+    const state = buildState(
+      [w(5000), w(null)],
+      [w(4000), w(3000)],
+      [w(2000), w(1000)]
+    );
+
+    const stats = computeCompetitionStatistics(state, 2, ["Prva", "Druga"]);
+
+    expect(stats.entered).toBe(5);
+    expect(stats.totalPositions).toBe(6);
+    expect(stats.complete).toBe(false);
+    expect(stats.winner).toBeNull();
   });
 });
