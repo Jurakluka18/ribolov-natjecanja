@@ -219,7 +219,6 @@ Aplikacija koristi branding:
 - **Created by Luka Jurak**
 
 Branding je dodan u:
-- vidljivi rezultat;
 - printable view / PNG;
 - PDF footer.
 
