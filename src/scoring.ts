@@ -6,7 +6,7 @@ export type Sector = "A" | "B" | "C";
 // - "normal": normalan unos težine
 // - "absent": član nije došao (bez člana) -> fiksni bodovi = broj ekipa + 1
 // - "yellow": žuti karton -> rangira se s -10% težine, na kraju +1 bod
-// - "red": crveni karton -> težina = 0 (zadnje mjesto), na kraju +1 bod
+// - "red": crveni karton -> fiksni bodovi = broj ekipa + 1; ne ulazi u rangiranje
 export type PositionStatus = "normal" | "absent" | "yellow" | "red";
 
 // Stanje jedne pozicije
@@ -25,7 +25,7 @@ export interface WeightsState {
 export interface SectorResultRow {
   teamNumber: number; // startni broj ekipe (pozicija unutar sektora)
   weight: number | null; // unesena (originalna) težina u gramima (null = neizvagano)
-  effectiveWeight: number; // težina korištena u rangiranju (žuti = -10%, crveni = 0)
+  effectiveWeight: number; // težina korištena u rangiranju (žuti = -10%; red se ne rangira)
   tieWeight: number; // kilaža za ekipni tiebreak (žuti = umanjena, crveni/absent = 0)
   status: PositionStatus;
   points: number | null; // konačni bodovi (uključuje +1 za kartone)
@@ -82,18 +82,17 @@ function tieWeight(p: PositionState): number {
  * Rangira jedan sektor i dodjeljuje bodove.
  *
  * Pravila:
- * - Bodovi za "bez člana" (absent) su fiksni: broj ekipa + 1. Te pozicije NE
- *   ulaze u rangiranje ostalih.
- * - Ostali natjecatelji (normal/yellow/red) rangiraju se samo međusobno,
+ * - Bodovi za "bez člana" (absent) i crveni karton (red) su fiksni:
+ *   broj ekipa + 1. Te pozicije NE ulaze u rangiranje ostalih.
+ * - Ostali natjecatelji (normal/yellow) rangiraju se samo međusobno,
  *   mjesta idu 1..m gdje je m broj prisutnih (uknjiženih ne-absent) pozicija.
  * - Veća efektivna težina = bolje mjesto. Žuti karton koristi -10% težine.
- * - Crveni karton ima efektivnu težinu 0 (zadnje mjesto, dijeli prosjek s nulama).
  * - Izjednačenje (ista efektivna težina) => prosjek pripadajućih mjesta.
- * - Nakon rangiranja: žuti i crveni karton dobivaju +1 bod na izračunato mjesto.
+ * - Nakon rangiranja žuti karton dobiva +1 bod na izračunato mjesto.
  * - Neizvagani (normal/yellow bez težine) se NE rangiraju (nemaju bodove).
  *
  * @param positions pozicije u sektoru
- * @param numTeams ukupan broj ekipa (za izračun absent bodova = numTeams + 1)
+ * @param numTeams ukupan broj ekipa (za absent/red bodove = numTeams + 1)
  */
 export function rankSector(positions: PositionState[], numTeams: number): SectorResultRow[] {
   const rows: SectorResultRow[] = positions.map((p, i) => ({
@@ -108,16 +107,18 @@ export function rankSector(positions: PositionState[], numTeams: number): Sector
     entered: isAccounted(p),
   }));
 
-  // Absent pozicije: fiksni bodovi = numTeams + 1, ne ulaze u rangiranje.
+  // Absent i red: fiksni bodovi = numTeams + 1, ne ulaze u rangiranje.
   rows.forEach((r) => {
-    if (r.status === "absent") {
+    if (r.status === "absent" || r.status === "red") {
       r.points = numTeams + 1;
       r.rank = null;
     }
   });
 
-  // Pozicije koje sudjeluju u rangiranju: uknjižene I nisu absent.
-  const ranking = rows.filter((r) => r.entered && r.status !== "absent");
+  // Pozicije koje sudjeluju u rangiranju: uknjižene normal/yellow pozicije.
+  const ranking = rows.filter(
+    (r) => r.entered && r.status !== "absent" && r.status !== "red"
+  );
   const m = ranking.length;
   if (m === 0) return rows;
 
@@ -137,8 +138,8 @@ export function rankSector(positions: PositionState[], numTeams: number): Sector
     const avg = sum / (endPlace - startPlace + 1);
     for (let k = idx; k < j; k++) {
       sorted[k].rank = avg;
-      // bodovi = mjesto; +1 za žuti/crveni karton
-      const bonus = sorted[k].status === "yellow" || sorted[k].status === "red" ? 1 : 0;
+      // bodovi = mjesto; +1 za žuti karton
+      const bonus = sorted[k].status === "yellow" ? 1 : 0;
       sorted[k].points = avg + bonus;
     }
     idx = j;

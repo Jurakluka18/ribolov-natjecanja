@@ -1125,7 +1125,7 @@ const STATUS_OPTIONS: { value: PositionStatus; label: string; title: string }[] 
   { value: "normal", label: "Norm.", title: "Normalno — unosi se težina" },
   { value: "absent", label: "Bez člana", title: "Član nije došao" },
   { value: "yellow", label: "Žuti", title: "Žuti karton (−10%, +1 bod)" },
-  { value: "red", label: "Crveni", title: "Crveni karton (0 g, +1 bod)" },
+  { value: "red", label: "Crveni", title: "Crveni karton (broj ekipa + 1 bod)" },
 ];
 
 function teamLabel(comp: CompetitionState, idx: number): string {
@@ -1560,7 +1560,7 @@ function StatusTag({ status }: { status: PositionStatus }) {
     status === "yellow"
       ? "Žuti karton (−10%, +1 bod)"
       : status === "red"
-      ? "Crveni karton (0 g, +1 bod)"
+      ? "Crveni karton (broj ekipa + 1 bod)"
       : "Bez člana";
   return (
     <span className={`status-badge ${b.cls}`} title={title}>
@@ -1657,7 +1657,7 @@ function SectorsPage({ comp }: { comp: CompetitionState }) {
                             {r.status === "absent" ? (
                               <span className="muted">bez člana</span>
                             ) : r.status === "red" ? (
-                              <span className="muted">0 g</span>
+                              <span className="muted">—</span>
                             ) : r.status === "yellow" ? (
                               <span title={`Umanjeno za 10%`}>
                                 {fmtWeight(r.weight)} g{" "}
@@ -2021,7 +2021,7 @@ const PV = {
 
 function sectorWeightCell(r: SectorResultRow): string {
   if (r.status === "absent") return "bez člana";
-  if (r.status === "red") return "0 g";
+  if (r.status === "red") return "—";
   if (r.status === "yellow") return `${fmtWeight(r.weight)} g (${fmtWeight(r.effectiveWeight)} g)`;
   return `${r.weight === 0 ? "0" : fmtWeight(r.weight)} g`;
 }
