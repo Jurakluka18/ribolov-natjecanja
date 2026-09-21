@@ -220,7 +220,6 @@ Aplikacija koristi branding:
 
 Branding je dodan u:
 - vidljivi rezultat;
-- tekstualni/copy export;
 - printable view / PNG;
 - PDF footer.
 

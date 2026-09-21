@@ -676,22 +676,6 @@ th.center {
   flex: 1;
 }
 
-/* ---------- Export box ---------- */
-.export-box {
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 14px;
-  font-family: "SF Mono", ui-monospace, "Cascadia Code", Menlo, monospace;
-  font-size: 0.8rem;
-  white-space: pre;
-  overflow-x: auto;
-  max-height: 320px;
-  overflow-y: auto;
-  line-height: 1.5;
-  color: var(--text);
-}
-
 .row-actions {
   display: flex;
   gap: 10px;
