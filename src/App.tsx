@@ -973,10 +973,24 @@ function StatisticsPage({ comp }: { comp: CompetitionState }) {
     );
   }
 
-  const maxSectorWeight = Math.max(
-    ...SECTORS.map((sector) => statistics.sectors[sector].totalWeight),
-    1
-  );
+  const sectorShares = SECTORS.map((sector) => ({
+    sector,
+    weight: statistics.sectors[sector].totalWeight,
+    percentage:
+      statistics.totalWeight > 0
+        ? (statistics.sectors[sector].totalWeight / statistics.totalWeight) * 100
+        : 0,
+  }));
+  const shareA = sectorShares[0].percentage;
+  const shareB = sectorShares[1].percentage;
+  const donutBackground =
+    statistics.totalWeight > 0
+      ? `conic-gradient(
+          ${SECTOR_COLORS.A} 0% ${shareA}%,
+          ${SECTOR_COLORS.B} ${shareA}% ${shareA + shareB}%,
+          ${SECTOR_COLORS.C} ${shareA + shareB}% 100%
+        )`
+      : "var(--surface-3)";
 
   return (
     <div className="statistics-page">
@@ -1021,24 +1035,33 @@ function StatisticsPage({ comp }: { comp: CompetitionState }) {
       </div>
 
       <div className="card">
-        <h2>Ukupna kilaža po sektorima</h2>
-        <div className="sector-chart" role="img" aria-label="Graf ukupne kilaže po sektorima">
-          {SECTORS.map((sector) => {
-            const item = statistics.sectors[sector];
-            const width = item.totalWeight === 0 ? 0 : Math.max(4, (item.totalWeight / maxSectorWeight) * 100);
-            return (
-              <div className="sector-chart-row" key={sector}>
-                <span className="sector-chart-label">{sector}</span>
-                <div className="sector-chart-track">
-                  <span
-                    className="sector-chart-bar"
-                    style={{ width: `${width}%`, background: SECTOR_COLORS[sector] }}
-                  />
-                </div>
-                <strong>{fmtWeight(item.totalWeight)} g</strong>
+        <h2>Udio sektora u ukupnoj kilaži</h2>
+        <div className="sector-donut-wrap">
+          <div
+            className="sector-donut"
+            style={{ background: donutBackground }}
+            role="img"
+            aria-label={sectorShares
+              .map(({ sector, percentage }) => `Sektor ${sector} ${Math.round(percentage)}%`)
+              .join(", ")}
+          >
+            <div className="sector-donut-center">
+              <span>Ukupno</span>
+              <strong>{fmtWeight(statistics.totalWeight)} g</strong>
+            </div>
+          </div>
+          <div className="sector-donut-legend">
+            {sectorShares.map(({ sector, weight, percentage }) => (
+              <div className="sector-donut-legend-row" key={sector}>
+                <span className="sector-donut-name">
+                  <span className="sector-donut-dot" style={{ background: SECTOR_COLORS[sector] }} />
+                  Sektor {sector}
+                </span>
+                <strong>{fmtWeight(weight)} g</strong>
+                <span>{Math.round(percentage)}%</span>
               </div>
-            );
-          })}
+            ))}
+          </div>
         </div>
       </div>
 
@@ -1061,12 +1084,12 @@ function StatisticsPage({ comp }: { comp: CompetitionState }) {
                   <dd>{item.averageWeight === null ? "—" : `${fmtWeight(item.averageWeight)} g`}</dd>
                 </div>
                 <div>
-                  <dt>Najveći ulov</dt>
-                  <dd>{item.biggestCatch ? `${fmtWeight(item.biggestCatch.weight)} g` : "—"}</dd>
-                </div>
-                <div>
-                  <dt>Ekipa s najvećim ulovom</dt>
-                  <dd>{item.biggestCatch?.teamName ?? "—"}</dd>
+                  <dt>Najveća kilaža</dt>
+                  <dd>
+                    {item.biggestCatch
+                      ? `${fmtWeight(item.biggestCatch.weight)} g · ${item.biggestCatch.teamName}`
+                      : "—"}
+                  </dd>
                 </div>
               </dl>
             </article>
