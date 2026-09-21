@@ -1,10 +1,8 @@
 // React hook koji upravlja online sinkronizacijom jednog natjecanja.
 //
-// - Učitava natjecanje + pozicije iz baze
-// - Pretplaćuje se na Realtime promjene
-// - Optimistic update lokalno + debounced (300ms) slanje u bazu
-// - Offline queue u localStorage + retry pri povratku mreže
-// - Izlaže sync status: 'synced' | 'syncing' | 'offline'
+// Svaki unos prvo se sprema lokalno, zatim se šalje dok ga baza ne potvrdi.
+// DB snapshoti se spajaju s lokalnim nepotvrđenim unosima kako refresh ne bi
+// pregazio rezultat unesen pri slabom signalu.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { PositionStatus, Sector } from "./scoring";
@@ -17,9 +15,15 @@ import {
 } from "./supabase";
 import {
   applyPositionChange,
+  applyQueuedUpdates,
   buildOnlineCompetition,
   enqueue,
+  loadCachedCompetition,
   loadQueue,
+  pendingForCompetition,
+  removeAcknowledged,
+  removeCachedCompetition,
+  saveCachedCompetition,
   type OnlineCompetition,
   type QueuedUpdate,
   saveQueue,
@@ -33,15 +37,15 @@ export interface UseOnlineSyncResult {
   error: string | null;
   syncStatus: SyncStatus;
   pendingCount: number;
-  // Akcije
   setWeight: (sector: Sector, idx: number, weight: number | null) => void;
   setStatus: (sector: Sector, idx: number, status: PositionStatus) => void;
   renameTeams: (teamNames: string[]) => void;
-  // signalizira da je natjecanje obrisano izvana (drugi uređaj resetirao)
   deletedExternally: boolean;
 }
 
 const DEBOUNCE_MS = 300;
+const RETRY_MS = 5_000;
+const REFRESH_MS = 15_000;
 
 export function useOnlineSync(
   competitionId: string | null,
@@ -54,291 +58,307 @@ export function useOnlineSync(
   const [pendingCount, setPendingCount] = useState(0);
   const [deletedExternally, setDeletedExternally] = useState(false);
 
-  // queue u ref-u (za sinkroni pristup unutar timera/eventova)
+  const compRef = useRef<OnlineCompetition | null>(null);
   const queueRef = useRef<QueuedUpdate[]>([]);
+  const flushRunningRef = useRef(false);
   const debounceTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
-  const onlineRef = useRef<boolean>(
-    typeof navigator !== "undefined" ? navigator.onLine : true
-  );
 
-  const refreshPending = useCallback(() => {
-    setPendingCount(queueRef.current.length);
+  const setLocalComp = useCallback((next: OnlineCompetition | null) => {
+    compRef.current = next;
+    setComp(next);
+    if (next) saveCachedCompetition(next);
   }, []);
 
-  // Ažuriraj sync status na temelju queue i mreže.
-  const recomputeStatus = useCallback(() => {
-    if (!onlineRef.current) {
+  const refreshPending = useCallback(() => {
+    const count = competitionId
+      ? pendingForCompetition(queueRef.current, competitionId).length
+      : 0;
+    setPendingCount(count);
+    return count;
+  }, [competitionId]);
+
+  const fetchSnapshot = useCallback(async (): Promise<boolean> => {
+    if (!competitionId) return false;
+    try {
+      const remoteCompetition = await getCompetition(competitionId);
+      if (!remoteCompetition) {
+        removeCachedCompetition(competitionId);
+        setDeletedExternally(true);
+        return false;
+      }
+      const positions = await getPositions(competitionId);
+      const merged = applyQueuedUpdates(
+        buildOnlineCompetition(remoteCompetition, positions),
+        queueRef.current
+      );
+      setLocalComp(merged);
+      setError(null);
+      return true;
+    } catch (e) {
+      setError((e as Error).message);
+      if (pendingForCompetition(queueRef.current, competitionId).length > 0) {
+        setSyncStatus("offline");
+      }
+      return false;
+    }
+  }, [competitionId, setLocalComp]);
+
+  const flushQueue = useCallback(async () => {
+    if (!competitionId || flushRunningRef.current) return;
+    const pending = pendingForCompetition(queueRef.current, competitionId);
+    if (pending.length === 0) {
+      setSyncStatus(navigator.onLine ? "synced" : "offline");
+      return;
+    }
+    if (!navigator.onLine) {
       setSyncStatus("offline");
       return;
     }
-    setSyncStatus(queueRef.current.length > 0 ? "syncing" : "synced");
-  }, []);
 
-  // Pošalji jedan update u bazu; pri grešci ostavi u queue.
-  const flushOne = useCallback(
-    async (u: QueuedUpdate): Promise<boolean> => {
-      try {
-        await updatePosition({
-          competitionId: u.competitionId,
-          sector: u.sector,
-          teamNumber: u.teamNumber,
-          weightGrams: u.weightGrams,
-          status: u.status,
-        });
-        return true;
-      } catch {
-        return false;
-      }
-    },
-    []
-  );
-
-  // Pokušaj poslati cijeli queue.
-  const flushQueue = useCallback(async () => {
-    if (!onlineRef.current) {
-      recomputeStatus();
-      return;
-    }
-    if (queueRef.current.length === 0) {
-      recomputeStatus();
-      return;
-    }
+    flushRunningRef.current = true;
     setSyncStatus("syncing");
-    const items = [...queueRef.current];
-    const remaining: QueuedUpdate[] = [];
-    let anyFail = false;
-    for (const u of items) {
-      const ok = await flushOne(u);
-      if (!ok) {
-        anyFail = true;
-        remaining.push(u);
+    let failed = false;
+    try {
+      for (const update of [...pending].sort((a, b) => a.ts - b.ts)) {
+        try {
+          await updatePosition({
+            competitionId: update.competitionId,
+            sector: update.sector,
+            teamNumber: update.teamNumber,
+            weightGrams: update.weightGrams,
+            status: update.status,
+          });
+          // Ako je za istu poziciju tijekom slanja nastala novija vrijednost,
+          // potvrda starog upisa nju neće ukloniti.
+          queueRef.current = removeAcknowledged(queueRef.current, update);
+          saveQueue(queueRef.current);
+          refreshPending();
+        } catch {
+          failed = true;
+        }
       }
+    } finally {
+      flushRunningRef.current = false;
     }
-    queueRef.current = remaining;
-    saveQueue(remaining);
-    refreshPending();
-    if (anyFail) {
-      onlineRef.current = navigator.onLine;
-      setSyncStatus(onlineRef.current ? "syncing" : "offline");
-    } else {
-      recomputeStatus();
-    }
-  }, [flushOne, recomputeStatus, refreshPending]);
 
-  // Inicijalno učitavanje + queue iz localStorage.
+    const remaining = refreshPending();
+    if (remaining === 0) {
+      const refreshed = await fetchSnapshot();
+      setSyncStatus(refreshed ? "synced" : "offline");
+    } else {
+      setSyncStatus(failed ? "offline" : "syncing");
+    }
+  }, [competitionId, fetchSnapshot, refreshPending]);
+
+  // Lokalni cache učitava se odmah, pa aplikacija radi i nakon refresha bez signala.
+  /* Initial hydration intentionally restores externally persisted local state. */
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (!competitionId) {
-      setComp(null);
+      setLocalComp(null);
       setLoading(false);
       return;
     }
+
     let cancelled = false;
-    setLoading(true);
-    setError(null);
     setDeletedExternally(false);
+    setError(null);
     queueRef.current = loadQueue();
     refreshPending();
 
+    const cached = loadCachedCompetition(competitionId);
+    if (cached) {
+      setLocalComp(applyQueuedUpdates(cached, queueRef.current));
+      setLoading(false);
+      setSyncStatus(
+        navigator.onLine
+          ? pendingForCompetition(queueRef.current, competitionId).length > 0
+            ? "syncing"
+            : "synced"
+          : "offline"
+      );
+    } else {
+      setLoading(true);
+      setSyncStatus(navigator.onLine ? "syncing" : "offline");
+    }
+
     (async () => {
-      try {
-        const c = await getCompetition(competitionId);
-        if (!c) {
-          if (!cancelled) {
-            setDeletedExternally(true);
-            setLoading(false);
-          }
-          return;
-        }
-        const positions = await getPositions(competitionId);
-        if (cancelled) return;
-        setComp(buildOnlineCompetition(c, positions));
-        setLoading(false);
-        recomputeStatus();
-        // Pokušaj poslati eventualni zaostali queue.
-        flushQueue();
-      } catch (e) {
-        if (cancelled) return;
-        // Mreža nedostupna pri učitavanju -> offline, ali app radi.
-        setError((e as Error).message);
-        setSyncStatus("offline");
-        setLoading(false);
-      }
+      const loaded = await fetchSnapshot();
+      if (cancelled) return;
+      setLoading(false);
+      if (loaded) await flushQueue();
+      else if (!cached) setSyncStatus("offline");
     })();
 
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [competitionId]);
+  }, [competitionId, fetchSnapshot, flushQueue, refreshPending, setLocalComp]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
-  // Realtime subscription.
   useEffect(() => {
     if (!competitionId) return;
-    const unsub = subscribeToCompetition(
+    const unsubscribe = subscribeToCompetition(
       competitionId,
       (change) => {
         if (change.kind === "competition_deleted") {
+          removeCachedCompetition(competitionId);
           setDeletedExternally(true);
           return;
         }
         if (change.kind === "competition") {
           const row = change.row;
-          setComp((prev) => {
-            if (!prev) return prev;
-            const teamNames = Array.from({ length: row.num_teams }, (_, i) =>
-              (row.team_names?.[String(i + 1)] ?? "").trim()
-            );
-            return { ...prev, name: row.name ?? "", teamNames };
-          });
+          const current = compRef.current;
+          if (!current) return;
+          const teamNames = Array.from({ length: row.num_teams }, (_, i) =>
+            (row.team_names?.[String(i + 1)] ?? "").trim()
+          );
+          setLocalComp({ ...current, name: row.name ?? "", teamNames });
           return;
         }
-        // position change — primijeni ako nije lokalno u queue-u (zadnji updated_at).
+
         const row = change.row;
-        const key = `${row.sector}-${row.team_number}`;
-        const pending = queueRef.current.find(
-          (q) => `${q.sector}-${q.teamNumber}` === key
+        const hasPending = pendingForCompetition(queueRef.current, competitionId).some(
+          (q) => q.sector === row.sector && q.teamNumber === row.team_number
         );
-        if (pending) {
-          // Imamo vlastiti pending upis — ne pregazi ga tuđom (starijom) verzijom.
-          return;
+        if (hasPending) return;
+
+        const current = compRef.current;
+        if (current) {
+          setLocalComp({
+            ...current,
+            weights: applyPositionChange(current.weights, row),
+          });
         }
-        setComp((prev) =>
-          prev ? { ...prev, weights: applyPositionChange(prev.weights, row) } : prev
-        );
       },
       (status) => {
-        // Realtime status -> grubo mapiraj na sync status kad nema queue.
-        if (status === "SUBSCRIBED") {
-          onlineRef.current = navigator.onLine;
-          recomputeStatus();
-        } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-          if (queueRef.current.length === 0) {
-            // ne forsiraj offline ako su podaci ok; samo signaliziraj sinkronizaciju
-          }
+        if (status === "SUBSCRIBED" && refreshPending() === 0) {
+          setSyncStatus("synced");
         }
       }
     );
-    return unsub;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [competitionId]);
+    return unsubscribe;
+  }, [competitionId, refreshPending, setLocalComp]);
 
-  // Online/offline eventi.
+  // Retry radi stalno dok je stranica otvorena. Povratak mreže, fokusiranje
+  // aplikacije i povratak iz pozadine pokreću sinkronizaciju odmah.
   useEffect(() => {
-    const goOnline = () => {
-      onlineRef.current = true;
-      onToast?.("Mreža je vraćena — sinkroniziram…");
-      flushQueue();
-    };
-    const goOffline = () => {
-      onlineRef.current = false;
-      setSyncStatus("offline");
-    };
-    window.addEventListener("online", goOnline);
-    window.addEventListener("offline", goOffline);
-    return () => {
-      window.removeEventListener("online", goOnline);
-      window.removeEventListener("offline", goOffline);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [flushQueue]);
+    if (!competitionId) return;
 
-  // Zajednička logika za zakazivanje update-a (debounce po poziciji).
+    const retryTimer = window.setInterval(() => {
+      void flushQueue();
+    }, RETRY_MS);
+    const refreshTimer = window.setInterval(() => {
+      if (navigator.onLine) void fetchSnapshot();
+    }, REFRESH_MS);
+
+    const syncNow = () => {
+      void flushQueue();
+      if (navigator.onLine) void fetchSnapshot();
+    };
+    const onOffline = () => setSyncStatus("offline");
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") syncNow();
+    };
+
+    window.addEventListener("online", syncNow);
+    window.addEventListener("offline", onOffline);
+    window.addEventListener("focus", syncNow);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.clearInterval(retryTimer);
+      window.clearInterval(refreshTimer);
+      window.removeEventListener("online", syncNow);
+      window.removeEventListener("offline", onOffline);
+      window.removeEventListener("focus", syncNow);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [competitionId, fetchSnapshot, flushQueue]);
+
   const scheduleUpdate = useCallback(
-    (sector: Sector, teamNumber: number, weightGrams: number | null, status: PositionStatus) => {
+    (
+      sector: Sector,
+      teamNumber: number,
+      weightGrams: number | null,
+      status: PositionStatus
+    ) => {
       if (!competitionId) return;
-      const u: QueuedUpdate = {
+      const now = Date.now();
+      const update: QueuedUpdate = {
         competitionId,
         sector,
         teamNumber,
         weightGrams,
         status,
-        ts: Date.now(),
+        ts: now,
+        token: `${now}-${Math.random().toString(36).slice(2)}`,
       };
-      // Ubaci u queue odmah (zadnja vrijednost pobjeđuje) i perzistiraj.
-      queueRef.current = enqueue(queueRef.current, u);
+      queueRef.current = enqueue(queueRef.current, update);
       saveQueue(queueRef.current);
       refreshPending();
-      setSyncStatus(onlineRef.current ? "syncing" : "offline");
+      setSyncStatus(navigator.onLine ? "syncing" : "offline");
 
-      const key = `${sector}-${teamNumber}`;
+      const key = `${competitionId}-${sector}-${teamNumber}`;
       if (debounceTimers.current[key]) clearTimeout(debounceTimers.current[key]);
-      debounceTimers.current[key] = setTimeout(async () => {
+      debounceTimers.current[key] = setTimeout(() => {
         delete debounceTimers.current[key];
-        if (!onlineRef.current) {
-          setSyncStatus("offline");
-          return;
-        }
-        // Pošalji samo najnoviju verziju ove pozicije.
-        const latest = queueRef.current.find(
-          (q) => `${q.sector}-${q.teamNumber}` === key
-        );
-        if (!latest) {
-          recomputeStatus();
-          return;
-        }
-        const ok = await flushOne(latest);
-        if (ok) {
-          queueRef.current = queueRef.current.filter(
-            (q) => `${q.sector}-${q.teamNumber}` !== key
-          );
-          saveQueue(queueRef.current);
-          refreshPending();
-          recomputeStatus();
-        } else {
-          onlineRef.current = navigator.onLine;
-          setSyncStatus(onlineRef.current ? "syncing" : "offline");
-          onToast?.("Sinkronizacija nije uspjela — spremljeno lokalno.");
-        }
+        void flushQueue();
       }, DEBOUNCE_MS);
     },
-    [competitionId, flushOne, recomputeStatus, refreshPending, onToast]
+    [competitionId, flushQueue, refreshPending]
   );
 
   const setWeight = useCallback(
     (sector: Sector, idx: number, weight: number | null) => {
-      let nextStatus: PositionStatus = "normal";
-      setComp((prev) => {
-        if (!prev) return prev;
-        const arr = [...prev.weights[sector]];
-        nextStatus = arr[idx]?.status ?? "normal";
-        arr[idx] = { ...arr[idx], weight };
-        return { ...prev, weights: { ...prev.weights, [sector]: arr } };
+      const current = compRef.current;
+      if (!current) return;
+      const positions = [...current.weights[sector]];
+      const status = positions[idx]?.status ?? "normal";
+      positions[idx] = { ...positions[idx], weight };
+      // Queue ide na disk prije cachea: i prekid baš usred unosa ostavlja
+      // vrijednost za kasnije slanje i vraćanje na ekran.
+      scheduleUpdate(sector, idx + 1, weight, status);
+      setLocalComp({
+        ...current,
+        weights: { ...current.weights, [sector]: positions },
       });
-      scheduleUpdate(sector, idx + 1, weight, nextStatus);
     },
-    [scheduleUpdate]
+    [scheduleUpdate, setLocalComp]
   );
 
   const setStatus = useCallback(
     (sector: Sector, idx: number, status: PositionStatus) => {
-      let nextWeight: number | null = null;
-      setComp((prev) => {
-        if (!prev) return prev;
-        const arr = [...prev.weights[sector]];
-        const next = { ...arr[idx], status };
-        if (status === "absent" || status === "red") next.weight = null;
-        nextWeight = next.weight;
-        arr[idx] = next;
-        return { ...prev, weights: { ...prev.weights, [sector]: arr } };
+      const current = compRef.current;
+      if (!current) return;
+      const positions = [...current.weights[sector]];
+      const next = { ...positions[idx], status };
+      if (status === "absent" || status === "red") next.weight = null;
+      positions[idx] = next;
+      scheduleUpdate(sector, idx + 1, next.weight, status);
+      setLocalComp({
+        ...current,
+        weights: { ...current.weights, [sector]: positions },
       });
-      scheduleUpdate(sector, idx + 1, nextWeight, status);
     },
-    [scheduleUpdate]
+    [scheduleUpdate, setLocalComp]
   );
 
   const renameTeams = useCallback(
     (teamNames: string[]) => {
-      setComp((prev) => (prev ? { ...prev, teamNames } : prev));
+      const current = compRef.current;
+      if (current) setLocalComp({ ...current, teamNames });
       if (!competitionId) return;
-      setSyncStatus(onlineRef.current ? "syncing" : "offline");
+      setSyncStatus(navigator.onLine ? "syncing" : "offline");
       updateCompetitionMeta({ competitionId, teamNames })
-        .then(() => recomputeStatus())
+        .then(() => {
+          if (refreshPending() === 0) setSyncStatus("synced");
+        })
         .catch(() => {
-          if (onlineRef.current) onToast?.("Spremanje naziva nije uspjelo.");
-          setSyncStatus(onlineRef.current ? "syncing" : "offline");
+          onToast?.("Spremanje naziva nije uspjelo.");
+          setSyncStatus("offline");
         });
     },
-    [competitionId, recomputeStatus, onToast]
+    [competitionId, onToast, refreshPending, setLocalComp]
   );
 
   return {

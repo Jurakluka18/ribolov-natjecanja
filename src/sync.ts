@@ -19,6 +19,7 @@ export const SECTORS: Sector[] = ["A", "B", "C"];
 // Aktivno online natjecanje spremamo zasebno od legacy v2 state-a.
 export const ACTIVE_KEY = "ribolovni-bodovnik-online-active";
 export const QUEUE_KEY = "ribolovni-bodovnik-sync-queue";
+const CACHE_PREFIX = "ribolovni-bodovnik-online-cache-";
 
 export interface ActiveOnline {
   id: string;
@@ -34,6 +35,49 @@ export interface OnlineCompetition {
   numTeams: number;
   teamNames: string[];
   weights: WeightsState;
+}
+
+function cacheKey(competitionId: string): string {
+  return `${CACHE_PREFIX}${competitionId}`;
+}
+
+export function loadCachedCompetition(competitionId: string): OnlineCompetition | null {
+  try {
+    const raw = localStorage.getItem(cacheKey(competitionId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as OnlineCompetition;
+    if (
+      parsed?.version === 2 &&
+      parsed.id === competitionId &&
+      typeof parsed.code === "string" &&
+      Number.isInteger(parsed.numTeams) &&
+      parsed.weights?.A &&
+      parsed.weights?.B &&
+      parsed.weights?.C
+    ) {
+      return parsed;
+    }
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
+export function saveCachedCompetition(comp: OnlineCompetition | null) {
+  if (!comp) return;
+  try {
+    localStorage.setItem(cacheKey(comp.id), JSON.stringify(comp));
+  } catch {
+    /* ignore */
+  }
+}
+
+export function removeCachedCompetition(competitionId: string) {
+  try {
+    localStorage.removeItem(cacheKey(competitionId));
+  } catch {
+    /* ignore */
+  }
 }
 
 // ---------- localStorage: aktivno online natjecanje ----------
@@ -132,10 +176,11 @@ export interface QueuedUpdate {
   weightGrams: number | null;
   status: PositionStatus;
   ts: number; // vrijeme zadnje izmjene (za dedupe — zadnji pobjeđuje)
+  token?: string; // identitet konkretne verzije unosa (stari queue zapisi ga nemaju)
 }
 
-function queueKeyFor(u: { sector: Sector; teamNumber: number }): string {
-  return `${u.sector}-${u.teamNumber}`;
+function queueKeyFor(u: { competitionId: string; sector: Sector; teamNumber: number }): string {
+  return `${u.competitionId}-${u.sector}-${u.teamNumber}`;
 }
 
 export function loadQueue(): QueuedUpdate[] {
@@ -164,4 +209,48 @@ export function enqueue(q: QueuedUpdate[], u: QueuedUpdate): QueuedUpdate[] {
   const filtered = q.filter((x) => queueKeyFor(x) !== key);
   filtered.push(u);
   return filtered;
+}
+
+export function pendingForCompetition(
+  q: QueuedUpdate[],
+  competitionId: string
+): QueuedUpdate[] {
+  return q.filter((u) => u.competitionId === competitionId);
+}
+
+// Ukloni potvrđenu verziju samo ako u međuvremenu nije nastala novija izmjena.
+export function removeAcknowledged(
+  q: QueuedUpdate[],
+  acknowledged: QueuedUpdate
+): QueuedUpdate[] {
+  const key = queueKeyFor(acknowledged);
+  return q.filter((u) => {
+    if (queueKeyFor(u) !== key) return true;
+    if (acknowledged.token) return u.token !== acknowledged.token;
+    return !(
+      u.ts === acknowledged.ts &&
+      u.weightGrams === acknowledged.weightGrams &&
+      u.status === acknowledged.status
+    );
+  });
+}
+
+// DB snapshot ne smije pregaziti lokalne izmjene koje još čekaju potvrdu.
+export function applyQueuedUpdates(
+  comp: OnlineCompetition,
+  queue: QueuedUpdate[]
+): OnlineCompetition {
+  let weights = comp.weights;
+  for (const u of pendingForCompetition(queue, comp.id).sort((a, b) => a.ts - b.ts)) {
+    weights = applyPositionChange(weights, {
+      competition_id: u.competitionId,
+      sector: u.sector,
+      team_number: u.teamNumber,
+      weight_grams: u.weightGrams,
+      status: u.status,
+      updated_at: new Date(u.ts).toISOString(),
+      updated_by: null,
+    });
+  }
+  return { ...comp, weights };
 }
