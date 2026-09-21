@@ -1694,7 +1694,6 @@ function TeamsPage({ comp, showToast }: { comp: CompetitionState; showToast: (m:
     () => computeSectorResults(comp.weights, comp.numTeams),
     [comp.weights, comp.numTeams]
   );
-  const [showExport, setShowExport] = useState(false);
   const [exporting, setExporting] = useState(false);
   const printRef = useRef<HTMLDivElement>(null);
 
@@ -1702,17 +1701,6 @@ function TeamsPage({ comp, showToast }: { comp: CompetitionState; showToast: (m:
   const incomplete = teams.filter((t) => !t.complete);
 
   const ranked = [...complete].sort((a, b) => (a.placement ?? 999) - (b.placement ?? 999));
-
-  const exportText = useMemo(() => buildExport(comp, teams), [comp, teams]);
-
-  const copyExport = async () => {
-    try {
-      await navigator.clipboard.writeText(exportText);
-      showToast("Rezultati kopirani u međuspremnik");
-    } catch {
-      showToast("Kopiranje nije uspjelo");
-    }
-  };
 
   // Snapshot skrivenog printable view-a u canvas (bijela pozadina, A4 proporcije)
   const renderCanvas = useCallback(async (): Promise<HTMLCanvasElement> => {
@@ -1829,16 +1817,6 @@ function TeamsPage({ comp, showToast }: { comp: CompetitionState; showToast: (m:
           </svg>
           Preuzmi sliku
         </button>
-        <button className="btn btn-ghost" onClick={copyExport}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <rect x="9" y="9" width="13" height="13" rx="2" />
-            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-          </svg>
-          Kopiraj rezultate
-        </button>
-        <button className="btn btn-ghost" onClick={() => setShowExport((v) => !v)}>
-          {showExport ? "Sakrij tekst" : "Tekstualni prikaz"}
-        </button>
       </div>
 
       <div className="card">
@@ -1926,13 +1904,6 @@ function TeamsPage({ comp, showToast }: { comp: CompetitionState; showToast: (m:
         Created by Luka Jurak
       </div>
 
-      {showExport && (
-        <div className="card no-print">
-          <div className="section-title" style={{ marginTop: 0 }}>Tekstualni prikaz za kopiranje</div>
-          <div className="export-box">{exportText}</div>
-        </div>
-      )}
-
       {/* Skriveni printable view — Čista bijela verzija za PDF / PNG izvoz */}
       <div className="print-offscreen" aria-hidden>
         <PrintableView
@@ -1944,35 +1915,6 @@ function TeamsPage({ comp, showToast }: { comp: CompetitionState; showToast: (m:
       </div>
     </div>
   );
-}
-
-function buildExport(comp: CompetitionState, teams: ReturnType<typeof computeTeamResults>): string {
-  const lines: string[] = [];
-  const title = comp.name || "Ribolovno natjecanje";
-  lines.push(title);
-  lines.push("=".repeat(Math.max(20, title.length)));
-  lines.push("");
-  lines.push("EKIPNI POREDAK");
-  lines.push("");
-  const ranked = teams.filter((t) => t.complete).sort((a, b) => (a.placement ?? 999) - (b.placement ?? 999));
-  lines.push("Mj.  Ekipa                    A     B     C   Ukupno   Kilaža");
-  ranked.forEach((t) => {
-    const label = `#${t.teamNumber} ${t.teamName}${t.hasAbsent ? " (X)" : ""}`;
-    lines.push(
-      `${String(t.placement).padEnd(4)} ${label.padEnd(24)} ${fmtPoints(t.pointsA).padStart(4)} ${fmtPoints(t.pointsB).padStart(4)} ${fmtPoints(t.pointsC).padStart(4)} ${fmtPoints(t.totalPoints).padStart(7)} ${(fmtWeight(t.totalWeight) + " g").padStart(9)}`
-    );
-  });
-  const incomplete = teams.filter((t) => !t.complete);
-  if (incomplete.length > 0) {
-    lines.push("");
-    lines.push("Nepotpune ekipe (čekaju unos):");
-    incomplete.forEach((t) => {
-      lines.push(`  #${t.teamNumber} ${t.teamName} — uneseno ${t.enteredCount}/3, kilaža ${fmtWeight(t.totalWeight)} g`);
-    });
-  }
-  lines.push("");
-  lines.push("Created by Luka Jurak");
-  return lines.join("\n");
 }
 
 // ===================== PRINTABLE VIEW (PDF / PNG) =====================
