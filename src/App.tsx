@@ -1711,7 +1711,12 @@ function TeamsPage({ comp, showToast }: { comp: CompetitionState; showToast: (m:
       scale: 2,
       useCORS: true,
       logging: false,
-      windowWidth: el.scrollWidth,
+      width: el.offsetWidth,
+      height: el.scrollHeight,
+      windowWidth: el.offsetWidth,
+      onclone: (clonedDocument) => {
+        clonedDocument.documentElement.setAttribute("data-theme", "light");
+      },
     });
   }, []);
 
@@ -1921,6 +1926,7 @@ const PV = {
     background: "#ffffff",
     color: "#111111",
     padding: 40,
+    overflow: "hidden",
     fontFamily:
       "system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
     boxSizing: "border-box" as const,
@@ -1947,7 +1953,9 @@ const PV = {
   },
   table: {
     width: "100%",
+    maxWidth: "100%",
     borderCollapse: "collapse" as const,
+    tableLayout: "fixed" as const,
     fontSize: 12.5,
     fontVariantNumeric: "tabular-nums" as const,
   },
@@ -1957,6 +1965,9 @@ const PV = {
     padding: "6px 8px",
     textAlign: "left" as const,
     fontWeight: 700,
+    color: "#111111",
+    whiteSpace: "normal" as const,
+    overflowWrap: "anywhere" as const,
   },
   thNum: {
     border: "1px solid #999",
@@ -1964,6 +1975,9 @@ const PV = {
     padding: "6px 8px",
     textAlign: "right" as const,
     fontWeight: 700,
+    color: "#111111",
+    whiteSpace: "normal" as const,
+    overflowWrap: "anywhere" as const,
   },
   thC: {
     border: "1px solid #999",
@@ -1971,15 +1985,38 @@ const PV = {
     padding: "6px 8px",
     textAlign: "center" as const,
     fontWeight: 700,
+    color: "#111111",
+    whiteSpace: "normal" as const,
+    overflowWrap: "anywhere" as const,
   },
-  td: { border: "1px solid #bbb", padding: "5px 8px", textAlign: "left" as const },
+  td: {
+    border: "1px solid #bbb",
+    background: "#ffffff",
+    color: "#111111",
+    padding: "5px 8px",
+    textAlign: "left" as const,
+    whiteSpace: "normal" as const,
+    overflowWrap: "anywhere" as const,
+  },
   tdNum: {
     border: "1px solid #bbb",
+    background: "#ffffff",
+    color: "#111111",
     padding: "5px 8px",
     textAlign: "right" as const,
     fontVariantNumeric: "tabular-nums" as const,
+    whiteSpace: "normal" as const,
+    overflowWrap: "anywhere" as const,
   },
-  tdC: { border: "1px solid #bbb", padding: "5px 8px", textAlign: "center" as const },
+  tdC: {
+    border: "1px solid #bbb",
+    background: "#ffffff",
+    color: "#111111",
+    padding: "5px 8px",
+    textAlign: "center" as const,
+    whiteSpace: "normal" as const,
+    overflowWrap: "anywhere" as const,
+  },
 };
 
 function sectorWeightCell(r: SectorResultRow): string {
@@ -2015,7 +2052,7 @@ const PrintableView = forwardRef<
       .sort((a, b) => (a.points ?? 9999) - (b.points ?? 9999));
 
   return (
-    <div ref={ref} style={PV.page}>
+    <div ref={ref} className="printable-view" style={PV.page}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
         <svg width="34" height="34" viewBox="0 0 32 32" fill="none">
           <path d="M6 16c3.5-6 13-8 18 0-4.5 8-14.5 6-18 0z" stroke="#0c5b52" strokeWidth="2.2" strokeLinejoin="round" />
@@ -2039,6 +2076,16 @@ const PrintableView = forwardRef<
         <p style={{ fontSize: 12, color: "#777" }}>Nijedna ekipa nema sva 3 člana uknjižena.</p>
       ) : (
         <table style={{ ...PV.table, border: "2px solid #0c5b52" }}>
+          <colgroup>
+            <col style={{ width: "9%" }} />
+            <col style={{ width: "11%" }} />
+            <col style={{ width: "23%" }} />
+            <col style={{ width: "9%" }} />
+            <col style={{ width: "9%" }} />
+            <col style={{ width: "9%" }} />
+            <col style={{ width: "13%" }} />
+            <col style={{ width: "17%" }} />
+          </colgroup>
           <thead>
             <tr>
               <th style={PV.thC}>Mjesto</th>
@@ -2083,6 +2130,14 @@ const PrintableView = forwardRef<
               </p>
             ) : (
               <table style={PV.table}>
+                <colgroup>
+                  <col style={{ width: "10%" }} />
+                  <col style={{ width: "13%" }} />
+                  <col style={{ width: "25%" }} />
+                  <col style={{ width: "19%" }} />
+                  <col style={{ width: "20%" }} />
+                  <col style={{ width: "13%" }} />
+                </colgroup>
                 <thead>
                   <tr>
                     <th style={PV.thC}>Mjesto</th>
