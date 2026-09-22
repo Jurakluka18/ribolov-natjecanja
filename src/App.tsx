@@ -1065,6 +1065,8 @@ function StatisticsPage({ comp }: { comp: CompetitionState }) {
         </div>
       </div>
 
+      <PositionWeightChart comp={comp} />
+
       <div className="stats-sector-grid">
         {SECTORS.map((sector) => {
           const item = statistics.sectors[sector];
@@ -1097,6 +1099,58 @@ function StatisticsPage({ comp }: { comp: CompetitionState }) {
         })}
       </div>
     </div>
+  );
+}
+
+function PositionWeightChart({ comp }: { comp: CompetitionState }) {
+  const results = computeSectorResults(comp.weights, comp.numTeams);
+  const places = SECTORS.flatMap((sector) => results[sector].map((row) => ({
+    ...row,
+    sector,
+    label: `${sector}${row.teamNumber}`,
+    name: teamLabel(comp, row.teamNumber - 1),
+  })));
+  const maximum = Math.max(1, ...places.map((place) => place.effectiveWeight));
+  const [selected, setSelected] = useState<string | null>(null);
+  const describe = (place: typeof places[number]) =>
+    place.status === "red" ? "Crveni karton" :
+    place.status === "absent" ? "Bez člana" :
+    !place.entered ? "Neuneseno" : `${fmtWeight(place.effectiveWeight)} g`;
+  const active = places.find((place) => place.label === selected);
+
+  return (
+    <section className="card">
+      <h2>Kilaža po mjestima</h2>
+      <p className="position-chart-detail" aria-live="polite">
+        {active ? `${active.label} · ${active.name} · ${describe(active)}` : "Dodirni stupac za detalje mjesta."}
+      </p>
+      <div className="position-chart-scroll" tabIndex={0} aria-label="Kilaža po mjestima, pomicanje lijevo–desno">
+        <div className="position-chart" style={{ minWidth: places.length * 58 }}>
+          {places.map((place) => (
+            <button
+              key={place.label}
+              className="position-chart-column"
+              aria-label={`${place.label}, ${place.name}, ${describe(place)}`}
+              aria-pressed={selected === place.label}
+              onClick={() => setSelected(place.label)}
+            >
+              <span className="position-chart-plot">
+                <span className="position-chart-bar" style={{
+                  height: `${place.effectiveWeight / maximum * 100}%`,
+                  background: SECTOR_COLORS[place.sector],
+                }}>
+                  <span className="position-chart-value">
+                    {place.status === "red" || place.status === "absent" || !place.entered ? "—" : fmtWeight(place.effectiveWeight)}
+                  </span>
+                </span>
+              </span>
+              <span className="position-chart-label">{place.label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+      <p className="position-chart-note">Kilaža u gramima · — nema kilaže za prikaz</p>
+    </section>
   );
 }
 
