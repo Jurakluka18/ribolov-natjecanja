@@ -955,6 +955,65 @@ function OfflineApp({
 
 // ===================== STATISTICS =====================
 function StatisticsPage({ comp }: { comp: CompetitionState }) {
+  const exportRef = useRef<HTMLDivElement>(null);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState("");
+  const downloadStatistics = async () => {
+    if (!exportRef.current) return;
+    setExporting(true);
+    setExportError("");
+    const copy = exportRef.current.cloneNode(true) as HTMLDivElement;
+    copy.classList.add("statistics-export");
+    copy.setAttribute("data-theme", "light");
+    copy.style.position = "absolute";
+    copy.style.left = "-12000px";
+    copy.style.top = "0";
+    // html2canvas does not render conic gradients. Use SVG for the exported donut.
+    const donut = copy.querySelector<HTMLElement>(".sector-donut");
+    if (donut) {
+      let offset = 0;
+      const arcs = SECTORS.map((sector) => {
+        const share = statistics.totalWeight > 0
+          ? statistics.sectors[sector].totalWeight / statistics.totalWeight * 100 : 0;
+        const arc = `<circle cx="100" cy="100" r="80" fill="none" stroke="${SECTOR_COLORS[sector]}" stroke-width="38" pathLength="100" stroke-dasharray="${share} ${100 - share}" stroke-dashoffset="${-offset}" transform="rotate(-90 100 100)"/>`;
+        offset += share;
+        return arc;
+      }).join("");
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200"><circle cx="100" cy="100" r="80" fill="none" stroke="#eaf2ef" stroke-width="38"/>${arcs}</svg>`;
+      const image = document.createElement("img");
+      image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+      image.className = "export-donut-image";
+      donut.style.background = "none";
+      donut.prepend(image);
+    }
+    copy.querySelectorAll<HTMLElement>(".position-chart-scroll").forEach((el) => { el.scrollLeft = 0; });
+    document.body.appendChild(copy);
+    try {
+      await document.fonts.ready;
+      await Promise.all(Array.from(copy.querySelectorAll("img")).map((img) => img.decode()));
+      const canvas = await html2canvas(copy, {
+        backgroundColor: "#ffffff", scale: 2, width: 1000,
+        height: copy.scrollHeight, windowWidth: 1100, useCORS: true,
+        onclone: (doc) => doc.documentElement.setAttribute("data-theme", "light"),
+      });
+      const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob(
+        (value) => value ? resolve(value) : reject(new Error("Prazna slika")), "image/png"
+      ));
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `statistika-${fileSlug(comp.name)}.png`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch {
+      setExportError("Izrada slike nije uspjela. Pokušaj ponovno.");
+    } finally {
+      copy.remove();
+      setExporting(false);
+    }
+  };
   const statistics = useMemo(
     () => computeCompetitionStatistics(comp.weights, comp.numTeams, comp.teamNames),
     [comp.weights, comp.numTeams, comp.teamNames]
@@ -993,7 +1052,15 @@ function StatisticsPage({ comp }: { comp: CompetitionState }) {
       : "var(--surface-3)";
 
   return (
-    <div className="statistics-page">
+    <>
+      <div className="row-actions">
+        <button className="btn btn-primary" onClick={downloadStatistics} disabled={exporting}>
+          {exporting ? "Izrada…" : "Preuzmi statistiku kao sliku"}
+        </button>
+      </div>
+      {exportError && <p role="alert">{exportError}</p>}
+    <div className="statistics-page" ref={exportRef}>
+      <div className="statistics-export-heading"><h1>{comp.name || "Ribolovno natjecanje"}</h1><p>Statistika natjecanja</p></div>
       {!statistics.complete && (
         <div className="stats-progress" role="status">
           Statistika je privremena · uneseno {statistics.entered} od {statistics.totalPositions} rezultata
@@ -1098,7 +1165,9 @@ function StatisticsPage({ comp }: { comp: CompetitionState }) {
           );
         })}
       </div>
+      <div className="statistics-export-footer">Created by Luka Jurak</div>
     </div>
+    </>
   );
 }
 
