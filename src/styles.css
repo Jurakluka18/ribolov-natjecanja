@@ -1217,3 +1217,16 @@ th.center {
   .code-pill { font-size: 0.74rem; padding: 4px 8px; }
   .header-sub { display: none; }
 }
+
+/* Vertical weights in fixed position order, with a common zero baseline. */
+.position-chart-detail { color: var(--text-muted); font-size: .85rem; margin: 8px 0 16px; min-height: 2.6em; overflow-wrap: anywhere; }
+.position-chart-scroll { overflow-x: auto; padding: 4px; }
+.position-chart { display: flex; padding-top: 28px; }
+.position-chart-column { flex: 1 0 58px; min-width: 0; padding: 0; border-radius: 4px; }
+.position-chart-column:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+.position-chart-column[aria-pressed="true"] { background: var(--primary-soft); }
+.position-chart-plot { display: flex; align-items: flex-end; justify-content: center; height: 200px; border-bottom: 1px solid var(--text-muted); background: repeating-linear-gradient(to top, transparent 0, transparent 49px, var(--divider) 49px, var(--divider) 50px); }
+.position-chart-bar { display: block; width: 30px; position: relative; border-radius: 4px 4px 0 0; }
+.position-chart-value { position: absolute; bottom: calc(100% + 5px); left: 50%; transform: translateX(-50%); font-size: .67rem; white-space: nowrap; color: var(--text); font-variant-numeric: tabular-nums; }
+.position-chart-label { display: block; padding: 9px 0; font-size: .8rem; font-weight: 700; }
+.position-chart-note { color: var(--text-muted); font-size: .75rem; margin-top: 10px; }
