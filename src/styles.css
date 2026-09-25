@@ -1245,6 +1245,5 @@ th.center {
 .statistics-export .position-chart { min-width: 0 !important; display: grid; grid-template-columns: repeat(18, minmax(0, 1fr)); row-gap: 30px; }
 .statistics-export .position-chart-column { min-width: 0; background: none; }
 .statistics-export .position-chart-plot { height: 150px; }
-.statistics-export .sector-donut { position: relative; background: none; }
-.export-donut-image { position: absolute; width: 100%; height: 100%; inset: 0; }
-.statistics-export .sector-donut-center { position: relative; }
+.statistics-export .sector-donut { width: 210px; height: 210px; background: none; box-shadow: none; }
+.export-donut-image { display: block; width: 210px; height: 210px; }

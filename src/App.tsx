@@ -968,28 +968,60 @@ function StatisticsPage({ comp }: { comp: CompetitionState }) {
     copy.style.position = "absolute";
     copy.style.left = "-12000px";
     copy.style.top = "0";
-    // html2canvas does not render conic gradients. Use SVG for the exported donut.
-    const donut = copy.querySelector<HTMLElement>(".sector-donut");
-    if (donut) {
-      let offset = 0;
-      const arcs = SECTORS.map((sector) => {
-        const share = statistics.totalWeight > 0
-          ? statistics.sectors[sector].totalWeight / statistics.totalWeight * 100 : 0;
-        const arc = `<circle cx="100" cy="100" r="80" fill="none" stroke="${SECTOR_COLORS[sector]}" stroke-width="38" pathLength="100" stroke-dasharray="${share} ${100 - share}" stroke-dashoffset="${-offset}" transform="rotate(-90 100 100)"/>`;
-        offset += share;
-        return arc;
-      }).join("");
-      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200"><circle cx="100" cy="100" r="80" fill="none" stroke="#eaf2ef" stroke-width="38"/>${arcs}</svg>`;
-      const image = document.createElement("img");
-      image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
-      image.className = "export-donut-image";
-      donut.style.background = "none";
-      donut.prepend(image);
-    }
     copy.querySelectorAll<HTMLElement>(".position-chart-scroll").forEach((el) => { el.scrollLeft = 0; });
     document.body.appendChild(copy);
     try {
       await document.fonts.ready;
+      // Rasterize the whole donut together: SVG/CSS layers can scale differently
+      // when html2canvas exports from a mobile viewport.
+      const donut = copy.querySelector<HTMLElement>(".sector-donut");
+      if (donut) {
+        const chart = document.createElement("canvas");
+        chart.width = chart.height = 630;
+        const ctx = chart.getContext("2d");
+        if (!ctx) throw new Error("Canvas nije dostupan");
+        ctx.scale(3, 3);
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, 210, 210);
+        let angle = -Math.PI / 2;
+        if (statistics.totalWeight > 0) {
+          SECTORS.forEach((sector) => {
+            const share = statistics.sectors[sector].totalWeight / statistics.totalWeight;
+            if (share <= 0) return;
+            const end = angle + share * Math.PI * 2;
+            ctx.beginPath();
+            ctx.moveTo(105, 105);
+            ctx.arc(105, 105, 104, angle, end);
+            ctx.closePath();
+            ctx.fillStyle = SECTOR_COLORS[sector];
+            ctx.fill();
+            angle = end;
+          });
+        } else {
+          ctx.beginPath();
+          ctx.arc(105, 105, 104, 0, Math.PI * 2);
+          ctx.fillStyle = "#eaf2ef";
+          ctx.fill();
+        }
+        ctx.beginPath();
+        ctx.arc(105, 105, 65, 0, Math.PI * 2);
+        ctx.fillStyle = "#ffffff";
+        ctx.fill();
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.font = "700 12px sans-serif";
+        ctx.fillStyle = "#63736e";
+        ctx.fillText("UKUPNO", 105, 92);
+        ctx.font = "800 20px sans-serif";
+        ctx.fillStyle = "#16302b";
+        ctx.fillText(`${fmtWeight(statistics.totalWeight)} g`, 105, 117, 116);
+        const image = document.createElement("img");
+        image.src = chart.toDataURL("image/png");
+        image.width = image.height = 210;
+        image.className = "export-donut-image";
+        donut.replaceChildren(image);
+        donut.style.background = "none";
+      }
       await Promise.all(Array.from(copy.querySelectorAll("img")).map((img) => img.decode()));
       const canvas = await html2canvas(copy, {
         backgroundColor: "#ffffff", scale: 2, width: 1000,
